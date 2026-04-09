@@ -4,3 +4,6 @@
 [submodule "fast-task-ui"]
 	path = fast-task-ui
 	url = https://github.com/XPDD/fast-task-ui.git
+[submodule "openclaw-plugin-fast-task"]
+	path = openclaw-plugin-fast-task
+	url = https://github.com/XPDD/openclaw-plugin-fast-task.git
