@@ -207,6 +207,173 @@ HTTP Hook 发送到服务器
 Claude Code 根据决定继续/停止
 ```
 
+### 🌐 网络部署架构
+
+#### 问题场景
+Claude Code 通常部署在内网开发机上，而外部平台（GitHub、Jira 等）需要通过 Webhook 发送任务通知，存在网络隔离问题。
+
+#### MCP Channel 机制说明
+
+**重要**：MCP Channel 本质就是 **MCP Notification**，通过 WebSocket 传输实现双向通信。
+
+MCP 协议支持多种传输方式：
+- **stdio**: 标准输入输出（本地子进程）
+- **WebSocket**: 通过 ws:// 或 wss://（远程连接）✅ 我们使用这个
+- **SSE**: Server-Sent Events（单向）
+
+双向通信机制：
+- **Client → Server**: MCP Tools (Claude 调用服务器工具)
+- **Server → Client**: MCP Notifications (服务器主动推送 Channel 消息)
+
+```python
+# fast-task-server 主动推送消息给 Claude Code
+await mcp.notification({
+  method: 'notifications/claude/channel',
+  params: {
+    content: "消息内容",
+    meta: { /* 属性 */ }
+  }
+})
+```
+
+#### 解决方案：fast-task-server 部署在云端（推荐）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        公网/云服务器                              │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │         fast-task-server (Python MCP Server)              │  │
+│  │  • 部署在云服务器 (有公网 IP)                               │  │
+│  │  • WebSocket 服务器 (wss://task-server.com:8080)          │  │
+│  │  • 接收 GitHub/Jira webhook                                │  │
+│  │  • 提供 MCP Tools (回复、状态查询)                          │  │
+│  │  • 通过 MCP Notification 主动推送任务                       │  │
+│  │  • 员工认证管理                                             │  │
+│  └────────────────────┬──────────────────────────────────────┘  │
+└───────────────────────┼─────────────────────────────────────────┘
+                        │
+                        │ WebSocket 连接 (wss://)
+                        │ MCP over WebSocket (双向通信)
+                        │  • Claude → Server: MCP Tools
+                        │  • Server → Claude: MCP Notifications (Channel)
+                        │
+┌───────────────────────┼─────────────────────────────────────────┐
+│      内网             │                                          │
+│  ┌────────────────────┴──────────────────────────────────────┐  │
+│  │            Claude Code + Plugin                           │  │
+│  │  • 通过 WebSocket 连接到远程 MCP Server                    │  │
+│  │  • 接收 <channel> 通知（任务、聊天消息）                    │  │
+│  │  • 调用 MCP tools（回复、状态更新等）                       │  │
+│  │  • 执行任务并触发 Hook                                      │  │
+│  │  • 员工认证: claude-code-system                             │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**部署优势**：
+- **fast-task-server** 部署在云服务器（公网可访问）
+- **Claude Code** 通过 **WebSocket 连接**到 server（内网可主动出站连接公网）
+- **外部系统** 发送 webhook 到 fast-task-server 的公网地址
+- **fast-task-server** 通过 **MCP Notification** 主动推送任务给 Claude Code
+- **双向通信**：WebSocket 支持 MCP 双向通信
+
+#### 员工认证配置
+
+Claude Code 在 fast-task-server 中使用固定的系统员工账号：
+
+```json
+// fast-task-claude-plugin/.mcp.json
+{
+  "mcpServers": {
+    "task-channel": {
+      "transport": {
+        "type": "websocket",
+        "url": "wss://task-server.yourdomain.com:8080/mcp"
+      },
+      "env": {
+        "EMPLOYEE_ID": "claude-code-system",
+        "EMPLOYEE_TYPE": "system",
+        "EMPLOYEE_TOKEN": "${user_config.webhook_token}"
+      }
+    }
+  }
+}
+```
+
+**认证参数**：
+- `EMPLOYEE_ID`: 固定为 `claude-code-system`
+- `EMPLOYEE_TYPE`: 固定为 `system`（系统账号）
+- `EMPLOYEE_TOKEN`: 从插件配置读取的 webhook token
+
+#### WebSocket 连接详解
+
+**连接 URL 格式**：
+- 开发环境: `ws://localhost:8080/mcp`
+- 生产环境: `wss://task-server.com:8080/mcp` (需要 TLS 证书)
+
+**fast-task-server WebSocket 端点配置**：
+
+```python
+# fast-task-server/main.py
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+app = FastAPI()
+
+# 允许跨域（如果需要）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# WebSocket MCP 端点
+@app.websocket("/mcp")
+async def websocket_mcp_endpoint(websocket: WebSocket):
+    # 1. 验证员工 token
+    token = websocket.query_params.get("token")
+    employee = await verify_employee(token)
+    if not employee or employee.id != "claude-code-system":
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
+    # 2. 建立 MCP over WebSocket 连接
+    await mcp_server.connect(WebSocketServerTransport(websocket))
+
+    # 3. 保持连接活跃
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        logger.info(f"Employee {employee.id} disconnected")
+
+# 启动服务器
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8080,
+        ssl_keyfile="/path/to/ssl/key.pem",
+        ssl_certfile="/path/to/ssl/cert.pem"
+    )
+```
+
+#### 其他部署方案（可选）
+
+**方案二：内网穿透**（临时/测试环境）
+- 使用 ngrok、frp 或 Cloudflare Tunnel
+- 适合快速测试，不推荐生产环境
+
+**方案三：混合架构**（企业级安全环境）
+```
+DMZ: Webhook Gateway (只接收和转发 webhook)
+     ↓ 内网专线/VLAN
+内网: fast-task-server + Claude Code
+```
+
 ---
 
 ## 🎨 核心功能

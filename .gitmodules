@@ -1,3 +1,6 @@
 [submodule "fast-task-server"]
 	path = fast-task-server
 	url = https://github.com/XPDD/fast-task.git
+[submodule "fast-task-ui"]
+	path = fast-task-ui
+	url = https://github.com/XPDD/fast-task-ui.git
