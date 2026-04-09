@@ -1,0 +1,65 @@
+{
+  "name": "fast-task-channel",
+  "version": "1.0.0",
+  "description": "Claude Code 任务通道插件 - 通过 Webhook 接收任务、审批控制和平台通知",
+  "author": {
+    "name": "Your Name",
+    "email": "[email protected]"
+  },
+  "homepage": "https://github.com/yourusername/fast-task-channel",
+  "repository": "https://github.com/yourusername/fast-task-channel",
+  "license": "MIT",
+  "keywords": ["task", "channel", "webhook", "approval", "hook", "github", "jira"],
+  "commands": [
+    "./commands/task-status.md",
+    "./commands/task-list.md",
+    "./commands/approve-task.md"
+  ],
+  "agents": [
+    "./agents/task-executor.md",
+    "./agents/code-reviewer.md"
+  ],
+  "skills": [
+    "./skills/task-manager/"
+  ],
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "server_port": {
+      "description": "MCP 服务器端口",
+      "default": "8080",
+      "sensitive": false
+    },
+    "webhook_token": {
+      "description": "Webhook 认证令牌（留空则不验证）",
+      "sensitive": true
+    },
+    "github_token": {
+      "description": "GitHub Personal Access Token（用于平台通知）",
+      "sensitive": true
+    },
+    "jira_url": {
+      "description": "Jira 服务器 URL（例如：https://your-domain.atlassian.net）",
+      "sensitive": false
+    },
+    "jira_email": {
+      "description": "Jira 邮箱",
+      "sensitive": false
+    },
+    "jira_token": {
+      "description": "Jira API Token",
+      "sensitive": true
+    },
+    "approval_mode": {
+      "description": "审批模式：auto（自动）、sync（同步审批）、async（异步审批）",
+      "default": "async",
+      "sensitive": false
+    }
+  },
+  "channels": [
+    {
+      "server": "task-channel",
+      "userConfig": {}
+    }
+  ]
+}

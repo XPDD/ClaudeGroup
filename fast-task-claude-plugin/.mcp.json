@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "task-channel": {
+      "command": "python",
+      "args": [
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "${user_config.server_port}",
+        "--log-level",
+        "error"
+      ],
+      "env": {
+        "WEBHOOK_PORT": "${user_config.server_port}",
+        "WEBHOOK_TOKEN": "${user_config.webhook_token}",
+        "GITHUB_TOKEN": "${user_config.github_token}",
+        "JIRA_URL": "${user_config.jira_url}",
+        "JIRA_EMAIL": "${user_config.jira_email}",
+        "JIRA_TOKEN": "${user_config.jira_token}",
+        "APPROVAL_MODE": "${user_config.approval_mode}",
+        "PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
+        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/../fast-task-server/src"
+      },
+      "cwd": "${CLAUDE_PLUGIN_ROOT}/../fast-task-server"
+    }
+  }
+}

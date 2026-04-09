@@ -1,0 +1,14 @@
+{
+  "name": "fast-task-claude-plugin",
+  "version": "1.0.0",
+  "description": "Claude Code 任务通道插件",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  }
+}

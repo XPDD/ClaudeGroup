@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:${user_config.server_port}/hooks/pre-tool-use",
+            "timeout": 30,
+            "headers": {
+              "Content-Type": "application/json"
+            }
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:${user_config.server_port}/hooks/task-created",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:${user_config.server_port}/hooks/task-completed",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:${user_config.server_port}/hooks/post-tool-use",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
