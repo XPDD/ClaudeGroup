@@ -16,6 +16,10 @@
     "./commands/approve-task.md"
   ],
   "agents": [
+    "./agents/product-manager.md",
+    "./agents/developer.md",
+    "./agents/qa-engineer.md",
+    "./agents/devops-engineer.md",
     "./agents/task-executor.md",
     "./agents/code-reviewer.md"
   ],
