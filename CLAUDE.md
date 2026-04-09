@@ -6,18 +6,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ClaudeGroup** is a Claude Code plugin system that provides task channel and execution control capabilities through MCP (Model Context Protocol).
 
-The project consists of two main components:
+The project consists of four main components:
 
 1. **fast-task-claude-plugin** - Claude Code plugin (TypeScript configuration)
    - Defines agents, commands, skills, and hooks
    - Contains Shell scripts for hook processing
-   - Configures MCP server connection
+   - Configures MCP WebSocket server connection
 
 2. **fast-task-server** - MCP Channel server (Python, git submodule)
    - HTTP Webhook endpoint for receiving tasks
    - Hook callback handlers for execution control
    - Approval management system
    - Platform notification integrations (GitHub, Jira)
+   - **WebSocket MCP server** for remote connections
+
+3. **fast-task-ui** - Web management interface (Nuxt 4 + Vue 3, git submodule)
+   - Task management and monitoring
+   - Approval flow management
+   - Agent status visualization
+
+4. **openclaw-plugin-fast-task** - OpenClaw plugin (TypeScript, git submodule)
+   - WebSocket communication node
+   - Node registration (whoIAm)
+   - Point-to-point chat with agents
+   - Workspace file operations
 
 ### Core Architecture
 
@@ -25,26 +37,72 @@ The project consists of two main components:
 ┌─────────────────────────────────────────────────────────────────┐
 │                         ClaudeGroup                             │
 ├─────────────────────────────────────────────────────────────────┤
-│  Plugin Layer (TS Config)     │  Server Layer (Python)          │
-│  ┌─────────────────────────┐  │  ┌─────────────────────────┐   │
-│  │ Agents (6 domain agents)│  │  │ Webhook Receiver       │   │
-│  │ Commands                │  │  │ Hook Handlers          │   │
-│  │ Skills                  │  │  │ Approval Manager       │   │
-│  │ Hooks Config            │  │  │ Platform Notifiers     │   │
-│  └─────────────────────────┘  │  └─────────────────────────┘   │
-│             │                  │              │                 │
-└─────────────┼──────────────────┴──────────────┼─────────────────┘
-              │                                 │
-              │ MCP stdio                       │ HTTP/Webhook
-              ▼                                 ▼
-┌─────────────────────────┐     ┌─────────────────────────────────┐
-│      Claude Code        │     │      External Systems            │
-│  • Receives tasks        │     │  • GitHub Issues               │
-│  • Executes tasks        │     │  • Jira                        │
-│  • Triggers hooks        │     │  • CI/CD (Jenkins/GitLab)      │
-│  • Gets approvals        │     │  • Approval Systems            │
-└─────────────────────────┘     └─────────────────────────────────┘
+│  Plugin (TS)        │  Server (Python)    │  UI (Nuxt)           │
+│  ┌──────────────┐   │  ┌───────────────┐  │  ┌──────────────┐   │
+│  │ Agents       │   │  │ Webhook       │  │  │ Task Mgmt    │   │
+│  │ Commands     │   │  │ Hooks         │  │  │ Approvals    │   │
+│  │ Skills       │   │  │ Approvals     │  │  │ Monitoring   │   │
+│  │ Hooks Config │   │  │ MCP WS Server │  │  └──────────────┘   │
+│  └──────────────┘   │  └───────────────┘  │                      │
+│                      │                   │                      │
+│  OpenClaw Plugin     │                   │                      │
+│  ┌──────────────┐   │                   │                      │
+│  │ WebSocket    │   │                   │                      │
+│  │ whoIAm       │   │                   │                      │
+│  │ P2P Chat     │   │                   │                      │
+│  │ Workspace Ops│   │                   │                      │
+│  └──────────────┘   │                   │                      │
+└──────────────────────┴───────────────────┴──────────────────────┘
+             │ MCP/WebSocket        │ HTTP/WebSocket
+             ▼                       ▼
+┌─────────────────────────┐  ┌─────────────────────────────────┐
+│      Claude Code        │  │      External Systems            │
+│  • Receives tasks        │  │  • GitHub Issues               │
+│  • Executes tasks        │  │  • Jira                        │
+│  • Triggers hooks        │  │  • CI/CD (Jenkins/GitLab)      │
+│  • Gets approvals        │  │  • Approval Systems            │
+└─────────────────────────┘  └─────────────────────────────────┘
 ```
+
+## Key Architectural Changes
+
+### MCP Transport: WebSocket (NOT stdio)
+
+**IMPORTANT**: This project uses **WebSocket transport** for MCP, NOT stdio.
+
+```json
+// .mcp.json configuration
+{
+  "mcpServers": {
+    "task-channel": {
+      "transport": {
+        "type": "websocket",
+        "url": "wss://task-server.com:8080/mcp"
+      },
+      "env": {
+        "EMPLOYEE_ID": "claude-code-system",
+        "EMPLOYEE_TOKEN": "${user_config.webhook_token}"
+      }
+    }
+  }
+}
+```
+
+**Connection flow**:
+- fast-task-server runs on public cloud server with WebSocket endpoint
+- Claude Code (in private network) connects OUT via WebSocket
+- External systems send webhooks to fast-task-server
+- fast-task-server pushes tasks to Claude Code via MCP Notifications over WebSocket
+- Bidirectional: Claude → Server (MCP Tools), Server → Claude (MCP Notifications)
+
+### Multi-Component Deployment
+
+**Development Environment**: All components local
+**Production Environment**:
+- fast-task-server: Cloud/server with public IP (WebSocket server)
+- fast-task-ui: Deployed with server or separately
+- Claude Code + Plugin: Private network, connects to server via WebSocket
+- openclaw-plugin-fast-task: Runs in OpenClaw, connects to server via WebSocket
 
 ## Key Concepts
 
@@ -95,6 +153,24 @@ Six specialized agents for different domains:
 
 ## Quick Start Commands
 
+### Git Submodules (CRITICAL - First Step)
+
+This project uses THREE git submodules. After cloning, you MUST initialize them:
+
+```bash
+# Clone repository
+git clone https://github.com/XPDD/ClaudeGroup.git
+cd ClaudeGroup
+
+# Initialize all submodules
+git submodule update --init --recursive
+
+# Update specific submodule
+git submodule update --remote fast-task-server
+git submodule update --remote fast-task-ui
+git submodule update --remote openclaw-plugin-fast-task
+```
+
 ### Plugin Development
 
 ```bash
@@ -120,7 +196,7 @@ cd fast-task-server
 uv sync
 # OR: pip install -r requirements.txt
 
-# Start MCP server (default: both WebSocket + FastAPI)
+# Start MCP server (WebSocket + FastAPI)
 python start.py
 
 # Initialize database
@@ -131,6 +207,45 @@ python scripts/test_user_api.py
 
 # API docs (start server first)
 open http://localhost:8766/docs
+
+# WebSocket MCP endpoint
+ws://localhost:8765/mcp?token=your-token
+```
+
+### Frontend UI (fast-task-ui)
+
+```bash
+cd fast-task-ui
+
+# Install dependencies
+pnpm install
+
+# Development server
+pnpm dev
+
+# Build for production
+pnpm build
+
+# Preview production build
+pnpm preview
+```
+
+### OpenClaw Plugin (openclaw-plugin-fast-task)
+
+```bash
+cd openclaw-plugin-fast-task
+
+# Install dependencies
+pnpm install
+
+# Build plugin
+pnpm build
+
+# Create package for OpenClaw installation
+pnpm pack
+
+# Install in OpenClaw
+openclaw plugins install ./openclaw-plugin-fast-task-1.0.0.tgz
 ```
 
 ### Server Configuration
@@ -144,9 +259,9 @@ startup:
 
 server:
   websocket:
-    port: 8765
+    port: 8765  # MCP WebSocket + OpenClaw WebSocket
   api:
-    port: 8766
+    port: 8766  # FastAPI REST API
 
 database:
   url: "postgresql+asyncpg://user:pass@localhost:5432/db"
@@ -155,10 +270,13 @@ database:
 ### Testing the Full System
 
 ```bash
-# 1. Start MCP server
+# 1. Start fast-task-server
 cd fast-task-server && python start.py
 
-# 2. Send test webhook
+# 2. (Optional) Start fast-task-ui
+cd fast-task-ui && pnpm dev
+
+# 3. Send test webhook
 curl -X POST http://localhost:8766/webhook \
   -H "Content-Type: application/json" \
   -d '{
@@ -168,11 +286,50 @@ curl -X POST http://localhost:8766/webhook \
     "priority": "low"
   }'
 
-# 3. Check hook callbacks are received
+# 4. Check hook callbacks are received
 # Monitor server logs for POST /hooks/* requests
 ```
 
 ## Architecture Details
+
+### MCP WebSocket Connection
+
+**IMPORTANT**: MCP uses WebSocket transport, NOT stdio.
+
+**Plugin Configuration** (`fast-task-claude-plugin/.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "task-channel": {
+      "transport": {
+        "type": "websocket",
+        "url": "wss://task-server.com:8080/mcp"
+      },
+      "env": {
+        "EMPLOYEE_ID": "claude-code-system",
+        "EMPLOYEE_TYPE": "system",
+        "EMPLOYEE_TOKEN": "${user_config.webhook_token}"
+      }
+    }
+  }
+}
+```
+
+**Server WebSocket Endpoint** (`fast-task-server`):
+```python
+# FastAPI WebSocket endpoint
+@app.websocket("/mcp")
+async def websocket_mcp_endpoint(websocket: WebSocket):
+    await websocket.accept()
+
+    # Verify employee token
+    token = websocket.query_params.get("token")
+    employee = await verify_employee(token)
+
+    # Establish MCP connection
+    transport = WebSocketServerTransport(websocket)
+    await mcp_server.connect(transport)
+```
 
 ### Plugin Configuration Structure
 
@@ -187,22 +344,21 @@ curl -X POST http://localhost:8766/webhook \
 - Uses `${user_config.server_port}` variable substitution
 - Configures timeouts for each hook
 
-**`fast-task-claude-plugin/.mcp.json`**:
-- Defines MCP server startup command
-- Passes userConfig as environment variables
-- Sets PYTHONPATH to fast-task-server/src
-
 ### Server Architecture (fast-task-server)
 
 The Python server is a **dual-server application**:
 
 1. **WebSocket Server** (`src/im/`):
+   - MCP WebSocket endpoint for Claude Code connections
+   - OpenClaw WebSocket endpoint for plugin connections
    - Real-time bidirectional messaging
    - Message routing by `"type"` field to handler classes
    - Handlers in `src/im/handlers/`: ping, echo, broadcast, auth, etc.
 
 2. **FastAPI Server** (`src/api/`):
    - REST API endpoints
+   - Webhook receiver for external systems
+   - Hook callback handlers
    - JWT authentication (manual verification in dependencies)
    - OpenAPI docs at `/docs`
 
@@ -332,7 +488,7 @@ async def public():
 
 - `fast-task-claude-plugin/.claude-plugin/plugin.json` - Plugin manifest
 - `fast-task-claude-plugin/hooks/hooks.json` - Hook event mappings
-- `fast-task-claude-plugin/.mcp.json` - MCP server configuration
+- `fast-task-claude-plugin/.mcp.json` - MCP WebSocket server configuration
 - `fast-task-claude-plugin/scripts/*.sh` - Hook processing scripts
 - `fast-task-claude-plugin/agents/*.md` - Agent definitions
 - `fast-task-claude-plugin/commands/*.md` - Command definitions
@@ -341,12 +497,31 @@ async def public():
 ### Server Files (fast-task-server)
 
 - `src/app.py` - Dual server initialization
-- `src/im/` - WebSocket server and message handlers
+- `src/im/` - WebSocket server and message handlers (MCP + OpenClaw)
 - `src/api/` - FastAPI routes and authentication
 - `src/dao/` - Data access objects (singleton pattern)
 - `src/database/models.py` - SQLAlchemy models
 - `src/database/client.py` - Database connection management
 - `config.yaml` - Server configuration
+
+### Frontend Files (fast-task-ui)
+
+- `app/` - Nuxt 4 application structure
+- `app/components/` - Vue 3 components
+- `app/pages/` - Page routes
+- `app/composables/` - Vue composition functions
+- `app/utils/` - Utility functions
+- `nuxt.config.ts` - Nuxt configuration
+- `package.json` - Dependencies
+
+### OpenClaw Plugin Files (openclaw-plugin-fast-task)
+
+- `src/` - Plugin source code
+- `src/handlers/` - WebSocket message handlers
+- `src/skills/` - OpenClaw skills (workspace operations)
+- `openclaw.plugin.json` - OpenClaw plugin manifest
+- `package.json` - Dependencies
+- `PROJECT_SUMMARY.md` - Detailed project documentation
 
 ### Documentation
 
@@ -354,12 +529,54 @@ async def public():
 - `docs/ARCHITECTURE.md` - Architecture design details
 - `docs/HOOKS.md` - Complete Hooks reference
 - `docs/EXAMPLES.md` - Usage examples
+- `docs/CHANNELS_TECH_SUMMARY.md` - MCP Channels technical summary
 - `fast-task-server/CLAUDE.md` - Python server architecture
+
+## Component Communication
+
+### fast-task-ui ↔ fast-task-server
+
+The frontend connects to the backend via WebSocket:
+
+```typescript
+// fast-task-ui WebSocket connection
+const ws = new WebSocket('ws://localhost:8765')
+
+// Register node
+ws.send(JSON.stringify({
+  type: 'register',
+  data: { client_type: 'web_ui', client_info: {...} }
+}))
+```
+
+### openclaw-plugin-fast-task ↔ fast-task-server
+
+The OpenClaw plugin connects as a WebSocket node:
+
+```json5
+{
+  "channels": {
+    "fast_task": {
+      "wsHost": "ws://localhost:8765",
+      "enabled": true
+    }
+  }
+}
+```
+
+The plugin automatically:
+1. Connects to WebSocket server
+2. Sends `whoIAm` message to register
+3. Receives unique `client_id` from server
+4. Can send/receive messages with agents
 
 ## Environment Variables
 
 The plugin injects these environment variables into the MCP server:
 
+- `EMPLOYEE_ID` - Fixed as "claude-code-system" for Claude Code
+- `EMPLOYEE_TYPE` - Fixed as "system" for Claude Code
+- `EMPLOYEE_TOKEN` - From userConfig.webhook_token
 - `WEBHOOK_PORT` - Server port (default: 8080)
 - `WEBHOOK_TOKEN` - Webhook authentication token
 - `GITHUB_TOKEN` - GitHub Personal Access Token
@@ -370,15 +587,44 @@ The plugin injects these environment variables into the MCP server:
 - `PLUGIN_DATA` - Plugin data directory path
 - `PYTHONPATH` - Points to `fast-task-server/src`
 
-## Git Submodule
+### WebSocket Connection URLs
 
-`fast-task-server/` is a git submodule pointing to `https://github.com/XPDD/fast-task.git`
+- **Development**: `ws://localhost:8765` (WebSocket) / `ws://localhost:8765/mcp?token=xxx` (MCP)
+- **Production**: `wss://task-server.com:8765` (WebSocket) / `wss://task-server.com:8765/mcp?token=xxx` (MCP)
 
-**Updating the submodule**:
+## Git Submodules
+
+This project contains THREE git submodules:
+
+1. **fast-task-server** - Python MCP Channel server
+   - Repository: https://github.com/XPDD/fast-task.git
+   - Path: `fast-task-server/`
+   - Purpose: Webhook接收、Hook处理、审批管理、MCP WebSocket服务
+
+2. **fast-task-ui** - Nuxt 4 Web管理界面
+   - Repository: https://github.com/XPDD/fast-task-ui.git
+   - Path: `fast-task-ui/`
+   - Purpose: 任务管理、审批流、Agent监控
+
+3. **openclaw-plugin-fast-task** - OpenClaw插件
+   - Repository: https://github.com/XPDD/openclaw-plugin-fast-task.git
+   - Path: `openclaw-plugin-fast-task/`
+   - Purpose: OpenClaw节点注册、点对点聊天、Workspace文件操作
+
+**Initializing submodules** (after cloning):
 ```bash
+git submodule update --init --recursive
+```
+
+**Updating specific submodule**:
+```bash
+# Update one submodule
 git submodule update --remote fast-task-server
 git add fast-task-server
 git commit -m "Update fast-task-server submodule"
+
+# Update all submodules
+git submodule update --remote
 ```
 
 **Cloning with submodules**:
@@ -395,3 +641,45 @@ git submodule update --init --recursive
 3. **Platform Agnostic**: Support multiple external platforms (GitHub, Jira, custom)
 4. **Security First**: Risk-based approval strategy
 5. **Extensibility**: Easy to add new platforms and approval strategies
+6. **WebSocket First**: MCP over WebSocket for remote connectivity and bidirectional communication
+
+## Recent Architectural Changes (2025-04)
+
+### Migration from SSH Tunnel to WebSocket
+
+**Before (Incorrect)**:
+- SSH tunnel + MCP stdio
+- Command-based spawning with local subprocess
+
+**After (Correct)**:
+- Direct WebSocket connection
+- MCP over WebSocket transport
+- Server deployed in cloud, Claude Code connects from private network
+
+### New Components Added
+
+1. **fast-task-ui** (Added 2025-04-09)
+   - Purpose: Web-based management interface
+   - Tech: Nuxt 4 + Vue 3 + TypeScript
+   - Features: Task management, approval workflows, agent monitoring
+
+2. **openclaw-plugin-fast-task** (Added 2025-04-09)
+   - Purpose: OpenClaw integration plugin
+   - Tech: TypeScript + OpenClaw Plugin SDK
+   - Features: Node registration, P2P chat, workspace file operations
+
+### Three-Submodule Structure
+
+The project now maintains three separate submodules:
+- Each submodule has its own repository and release cycle
+- Main project orchestrates them through proper configuration
+- All three must be initialized with `git submodule update --init --recursive`
+
+### MCP Channel Implementation
+
+Channels are implemented using **MCP Notifications over WebSocket**:
+- Server sends `notifications/claude/channel` to push events
+- Claude receives as `<channel>` tags in context
+- Bidirectional: Tools (Claude→Server) + Notifications (Server→Claude)
+
+See `docs/CHANNELS_TECH_SUMMARY.md` for complete technical details.
